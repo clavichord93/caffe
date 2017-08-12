@@ -31,6 +31,40 @@ void caffe_cpu_gemm<double>(const CBLAS_TRANSPOSE TransA,
       ldb, beta, C, N);
 }
 
+template<>
+void caffe_cpu_gemm_batched<float>(const CBLAS_TRANSPOSE TransA,
+    const CBLAS_TRANSPOSE TransB, const int M, const int N, const int K,
+    const float alpha, const float* A, const float* B, const float beta,
+    float* C, int count) {
+  int lda = (TransA == CblasNoTrans) ? K : M;
+  int ldb = (TransB == CblasNoTrans) ? N : K;
+  int strideA = M * K;
+  int strideB = K * N;
+  int strideC = M * N;
+  for (int i = 0; i < count; i++) {
+    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K,
+        alpha, A + i * strideA, lda, B + i * strideB, ldb,
+        beta, C + i * strideC, N);
+  }
+}
+
+template<>
+void caffe_cpu_gemm_batched<double>(const CBLAS_TRANSPOSE TransA,
+    const CBLAS_TRANSPOSE TransB, const int M, const int N, const int K,
+    const double alpha, const double* A, const double* B, const double beta,
+    double* C, int count) {
+  int lda = (TransA == CblasNoTrans) ? K : M;
+  int ldb = (TransB == CblasNoTrans) ? N : K;
+  int strideA = M * K;
+  int strideB = K * N;
+  int strideC = M * N;
+  for (int i = 0; i < count; i++) {
+    cblas_dgemm(CblasRowMajor, TransA, TransB, M, N, K,
+        alpha, A + i * strideA, lda, B + i * strideB, ldb,
+        beta, C + i * strideC, N);
+  }
+}
+
 template <>
 void caffe_cpu_gemv<float>(const CBLAS_TRANSPOSE TransA, const int M,
     const int N, const float alpha, const float* A, const float* x,

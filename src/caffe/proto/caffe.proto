@@ -570,6 +570,7 @@ message ContrastiveLossParameter {
 message ConvolutionParameter {
   optional uint32 num_output = 1; // The number of outputs for the layer
   optional bool bias_term = 2 [default = true]; // whether to have bias terms
+  optional uint32 multiplier = 19 [default = 1]; // The depthwise multiplier
 
   // Pad, kernel size, and stride are all given as a single value for equal
   // dimensions in all spatial dimensions, or once per spatial dimension.

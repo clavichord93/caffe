@@ -38,17 +38,17 @@ class Layer {
    * layer.
    */
   explicit Layer(const LayerParameter& param)
-    : layer_param_(param) {
-      // Set phase and copy blobs (if there are any).
-      phase_ = param.phase();
-      if (layer_param_.blobs_size() > 0) {
-        blobs_.resize(layer_param_.blobs_size());
-        for (int i = 0; i < layer_param_.blobs_size(); ++i) {
-          blobs_[i].reset(new Blob<Dtype>());
-          blobs_[i]->FromProto(layer_param_.blobs(i));
-        }
+      : layer_param_(param) {
+    // Set phase and copy blobs (if there are any).
+    phase_ = param.phase();
+    if (layer_param_.blobs_size() > 0) {
+      blobs_.resize(layer_param_.blobs_size());
+      for (int i = 0; i < layer_param_.blobs_size(); ++i) {
+        blobs_[i].reset(new Blob<Dtype>());
+        blobs_[i]->FromProto(layer_param_.blobs(i));
       }
     }
+  }
   virtual ~Layer() {}
 
   /**
