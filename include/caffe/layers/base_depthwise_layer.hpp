@@ -1,4 +1,5 @@
-#define CAFFE_BASE_CONVOLUTION_LAYER_HPP_
+#ifndef CAFFE_BASE_DEPTHWISE_LAYER_HPP_
+#define CAFFE_BASE_DEPTHWISE_LAYER_HPP_
 
 #include <vector>
 
@@ -186,4 +187,4 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
 
 }  // namespace caffe
 
-#endif  // CAFFE_BASE_CONVOLUTION_LAYER_HPP_
+#endif  // CAFFE_BASE_DEPTHWISE_LAYER_HPP_

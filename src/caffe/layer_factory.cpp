@@ -8,6 +8,7 @@
 #include "caffe/layer.hpp"
 #include "caffe/layer_factory.hpp"
 #include "caffe/layers/conv_layer.hpp"
+#include "caffe/layers/depthwise_layer.hpp"
 #include "caffe/layers/lrn_layer.hpp"
 #include "caffe/layers/pooling_layer.hpp"
 #include "caffe/layers/relu_layer.hpp"
@@ -18,6 +19,7 @@
 
 #ifdef USE_CUDNN
 #include "caffe/layers/cudnn_conv_layer.hpp"
+#include "caffe/layers/cudnn_depthwise_layer.hpp"
 #include "caffe/layers/cudnn_lcn_layer.hpp"
 #include "caffe/layers/cudnn_lrn_layer.hpp"
 #include "caffe/layers/cudnn_pooling_layer.hpp"
@@ -72,6 +74,46 @@ shared_ptr<Layer<Dtype> > GetConvolutionLayer(
 }
 
 REGISTER_LAYER_CREATOR(Convolution, GetConvolutionLayer);
+
+// Get depthwise layer according to engine.
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetDepthwiseLayer(
+    const LayerParameter& param) {
+  ConvolutionParameter conv_param = param.convolution_param();
+  ConvolutionParameter_Engine engine = conv_param.engine();
+#ifdef USE_CUDNN
+  bool use_dilation = false;
+  for (int i = 0; i < conv_param.dilation_size(); ++i) {
+    if (conv_param.dilation(i) > 1) {
+      use_dilation = true;
+    }
+  }
+#endif
+  if (engine == ConvolutionParameter_Engine_DEFAULT) {
+    engine = ConvolutionParameter_Engine_CAFFE;
+#ifdef USE_CUDNN
+    if (!use_dilation) {
+      engine = ConvolutionParameter_Engine_CUDNN;
+    }
+#endif
+  }
+  if (engine == ConvolutionParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new DepthwiseLayer<Dtype>(param));
+#ifdef USE_CUDNN
+  } else if (engine == ConvolutionParameter_Engine_CUDNN) {
+    if (use_dilation) {
+      LOG(FATAL) << "CuDNN doesn't support the dilated convolution at Layer "
+                 << param.name();
+    }
+    return shared_ptr<Layer<Dtype> >(new CuDNNDepthwiseLayer<Dtype>(param));
+#endif
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+    throw;  // Avoids missing return warning
+  }
+}
+
+REGISTER_LAYER_CREATOR(Depthwise, GetDepthwiseLayer);
 
 // Get pooling layer according to engine.
 template <typename Dtype>
