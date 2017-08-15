@@ -100,6 +100,8 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
   bool bias_term_;
   // Whether to use n-D im2col or not.
   bool force_nd_im2col_;
+  // The size of every kernel (1 x kernel_h x kernel_w).
+  int kernel_dim_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists
@@ -174,8 +176,6 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
   int conv_in_channels_;
   // The output size of a filter kernel (out_h x out_w).
   int conv_out_spatial_dim_;
-  // The size of every kernel (1 x kernel_h x kernel_w).
-  int kernel_dim_;
   // The offset of every group (channel) in workspace.
   int col_offset_;
   // The offset of every group (channel) in output.

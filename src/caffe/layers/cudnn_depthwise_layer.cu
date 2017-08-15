@@ -1,11 +1,11 @@
 #ifdef USE_CUDNN
 #include <vector>
 
-#include "caffe/layers/cudnn_conv_layer.hpp"
+#include "caffe/layers/cudnn_depthwise_layer.hpp"
 
 namespace caffe {
 
-__global__ void sync_conv_groups() { }
+__global__ void sync_depthwise() { }
 
 template <typename Dtype>
 void CuDNNDepthwiseLayer<Dtype>::Forward_gpu(
@@ -18,7 +18,7 @@ void CuDNNDepthwiseLayer<Dtype>::Forward_gpu(
     // Forward through cuDNN.
     // Filters.
     CUDNN_CHECK(cudnnConvolutionForward(handle_[0], cudnn::dataType<Dtype>::one,
-        bottom_descs_[i], bottom_data, filter_desc_, weight, conv_descs_[i], 
+        bottom_descs_[i], bottom_data, filter_desc_, weight, conv_descs_[i],
         fwd_algo_[i], workspace[0], workspace_fwd_sizes_[i],
         cudnn::dataType<Dtype>::zero, top_descs_[i], top_data));
 
@@ -26,14 +26,14 @@ void CuDNNDepthwiseLayer<Dtype>::Forward_gpu(
     if (this->bias_term_) {
       const Dtype* bias_data = this->blobs_[1]->gpu_data();
       CUDNN_CHECK(cudnnAddTensor(handle_[0], cudnn::dataType<Dtype>::one,
-          bias_desc_, bias_data, cudnn::dataType<Dtype>::one, top_descs_[i], 
+          bias_desc_, bias_data, cudnn::dataType<Dtype>::one, top_descs_[i],
           top_data));
     }
 
     // Synchronize the work across groups, each of which went into its own
     // stream, by launching an empty kernel into the default (null) stream.
     // NOLINT_NEXT_LINE(whitespace/operators)
-    sync_conv_groups<<<1, 1>>>();
+    sync_depthwise<<<1, 1>>>();
   }
 }
 
@@ -42,7 +42,7 @@ void CuDNNDepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
   const Dtype* weight = NULL;
   Dtype* weight_diff = NULL;
-  Dtype* mask = NULL;
+  const Dtype* mask = NULL;
   int num_weight = 0;
   if (this->param_propagate_down_[0]) {
     weight = this->blobs_[0]->gpu_data();
@@ -60,16 +60,16 @@ void CuDNNDepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     // Gradient w.r.t. bias.
     if (this->bias_term_ && this->param_propagate_down_[1]) {
       CUDNN_CHECK(cudnnConvolutionBackwardBias(handle_[0],
-          cudnn::dataType<Dtype>::one, top_descs_[i], top_diff, 
+          cudnn::dataType<Dtype>::one, top_descs_[i], top_diff,
           cudnn::dataType<Dtype>::one, bias_desc_, bias_diff));
     }
 
     // Gradient w.r.t. weights.
     if (this->param_propagate_down_[0]) {
       const Dtype* bottom_data = bottom[i]->gpu_data();
-      CUDNN_CHECK(cudnnConvolutionBackwardFilter(handle_[1], 
+      CUDNN_CHECK(cudnnConvolutionBackwardFilter(handle_[1],
           cudnn::dataType<Dtype>::one, bottom_descs_[i], bottom_data,
-          top_descs_[i], top_diff, conv_descs_[i], bwd_filter_algo_[i], 
+          top_descs_[i], top_diff, conv_descs_[i], bwd_filter_algo_[i],
           workspace[1], workspace_bwd_filter_sizes_[i],
           cudnn::dataType<Dtype>::one, filter_desc_, weight_diff));
     }
@@ -80,8 +80,8 @@ void CuDNNDepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         weight = this->blobs_[0]->gpu_data();
       }
       Dtype* bottom_diff = bottom[i]->mutable_gpu_diff();
-      CUDNN_CHECK(cudnnConvolutionBackwardData(handle_[2], 
-          cudnn::dataType<Dtype>::one, filter_desc_, weight, top_descs_[i], 
+      CUDNN_CHECK(cudnnConvolutionBackwardData(handle_[2],
+          cudnn::dataType<Dtype>::one, filter_desc_, weight, top_descs_[i],
           top_diff, conv_descs_[i], bwd_data_algo_[i], workspace[2],
           workspace_bwd_data_sizes_[i], cudnn::dataType<Dtype>::zero,
           bottom_descs_[i], bottom_diff));
@@ -90,7 +90,7 @@ void CuDNNDepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     // Synchronize the work across groups, each of which went into its own
     // stream, by launching an empty kernel into the default (null) stream.
     // NOLINT_NEXT_LINE(whitespace/operators)
-    sync_conv_groups<<<1, 1>>>();
+    sync_depthwise<<<1, 1>>>();
     if (this->param_propagate_down_[0]) {
       const Dtype* unmasked_diff = this->blobs_[0]->gpu_diff();
       caffe_gpu_mul(num_weight, mask, unmasked_diff, weight_diff);

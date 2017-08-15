@@ -55,9 +55,6 @@ void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
     workspace[g] = NULL;
   }
 
-  // Set the indexing parameters.
-  bias_offset_ = this->num_output_;
-
   // Create filter descriptor.
   const int* kernel_shape_data = this->kernel_shape_.cpu_data();
   const int kernel_h = kernel_shape_data[0];
@@ -85,12 +82,13 @@ void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
 
   // Modify parameters in DepthwiseLayer to CuDNNDepthwiseLayer
   vector<int> weight_shape(4);
-  weight_shape[0] = this->num_outputs_;
+  weight_shape[0] = this->num_output_;
   weight_shape[1] = this->channels_;
   weight_shape[2] = kernel_h;
   weight_shape[3] = kernel_w;
 
-  caffe_weight_.CopyFrom(*this->blobs_[0], true, true);
+  caffe_weight_.CopyFrom(*this->blobs_[0], false, true);
+  caffe_weight_.CopyFrom(*this->blobs_[0], true, false);
   this->blobs_[0].reset(new Blob<Dtype>(weight_shape));
   mask_.Reshape(weight_shape);
 
@@ -107,8 +105,6 @@ void CuDNNDepthwiseLayer<Dtype>::Reshape(
       << "CuDNNConvolution input must have 2 spatial axes "
       << "(e.g., height and width). "
       << "Use 'engine: CAFFE' for general ND convolution.";
-  bottom_offset_ = this->bottom_dim_;
-  top_offset_ = this->top_dim_;
   const int height = bottom[0]->shape(this->channel_axis_ + 1);
   const int width = bottom[0]->shape(this->channel_axis_ + 2);
   const int height_out = top[0]->shape(this->channel_axis_ + 1);
@@ -259,10 +255,10 @@ CuDNNDepthwiseLayer<Dtype>::~CuDNNDepthwiseLayer() {
 }
 
 template <typename Dtype>
-CuDNNDepthwiseLayer<Dtype>::ToProto(LayerParameter* param,
-    bool write_diff = false) {
+void CuDNNDepthwiseLayer<Dtype>::ToProto(LayerParameter* param,
+    bool write_diff) {
   param->Clear();
-  param->CopyFrom(layer_param_);
+  param->CopyFrom(this->layer_param_);
   param->clear_blobs();
 
   if (this->blobs_.size() > 0) {
@@ -276,7 +272,7 @@ CuDNNDepthwiseLayer<Dtype>::ToProto(LayerParameter* param,
 }
 
 template <typename Dtype>
-CuDNNDepthwiseLayer<Dtype>::CaffeToCuDNN() {
+void CuDNNDepthwiseLayer<Dtype>::CaffeToCuDNN() {
   if (this->blobs_.size() > 0) {
     const Dtype* caffe_data = caffe_weight_.cpu_data();
     const Dtype* caffe_diff = caffe_weight_.cpu_diff();
@@ -285,15 +281,15 @@ CuDNNDepthwiseLayer<Dtype>::CaffeToCuDNN() {
     Dtype* mask_data = mask_.mutable_cpu_data();
 
     int N = this->num_output_ * this->channels_ * this->kernel_dim_;
-    caffe_set(N, 0, target_data);
-    caffe_set(N, 0, target_diff);
-    caffe_set(N, 0, mask_data);
+    caffe_set(N, (Dtype)0., cudnn_data);
+    caffe_set(N, (Dtype)0., cudnn_diff);
+    caffe_set(N, (Dtype)0., mask_data);
 
-    for (int i_ = 0; i < this->multiplier_; ++i_) {
+    for (int i_ = 0; i_ < this->multiplier_; ++i_) {
       for (int j = 0; j < this->channels_; ++j) {
         for (int k = 0; k < this->kernel_dim_; ++k) {
           int i = j * this->multiplier_ + i_;
-          int idx_cudnn = ((i * this->channels_ + j) * this->kernel_dim_ + k;
+          int idx_cudnn = (i * this->channels_ + j) * this->kernel_dim_ + k;
           int idx_caffe = i * this->kernel_dim_ + k;
           cudnn_data[idx_cudnn] = caffe_data[idx_caffe];
           cudnn_diff[idx_cudnn] = caffe_diff[idx_caffe];
@@ -305,7 +301,7 @@ CuDNNDepthwiseLayer<Dtype>::CaffeToCuDNN() {
 }
 
 template <typename Dtype>
-CuDNNDepthwiseLayer<Dtype>::CuDNNToCaffe() {
+void CuDNNDepthwiseLayer<Dtype>::CuDNNToCaffe() {
   if (this->blobs_.size() > 0) {
     const Dtype* cudnn_data = this->blobs_[0]->cpu_data();
     const Dtype* cudnn_diff = this->blobs_[0]->cpu_diff();
@@ -315,7 +311,7 @@ CuDNNDepthwiseLayer<Dtype>::CuDNNToCaffe() {
       for (int j = 0; j < this->channels_; ++j) {
         for (int k = 0; k < this->kernel_dim_; ++k) {
           int i = j * this->multiplier_ + i_;
-          int idx_cudnn = ((i * this->channels_ + j) * this->kernel_dim_ + k;
+          int idx_cudnn = (i * this->channels_ + j) * this->kernel_dim_ + k;
           int idx_caffe = i * this->kernel_dim_ + k;
           caffe_data[idx_caffe] = cudnn_data[idx_cudnn];
           caffe_diff[idx_caffe] = cudnn_diff[idx_cudnn];

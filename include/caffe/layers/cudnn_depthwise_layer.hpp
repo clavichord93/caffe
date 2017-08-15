@@ -37,6 +37,7 @@ class CuDNNDepthwiseLayer : public DepthwiseLayer<Dtype> {
   virtual void ToProto(LayerParameter* param, bool write_diff = false);
   virtual void CaffeToCuDNN();
   virtual void CuDNNToCaffe();
+  virtual Blob<Dtype>& caffe_weight() { return caffe_weight_; }
 
  protected:
   virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
@@ -57,7 +58,6 @@ class CuDNNDepthwiseLayer : public DepthwiseLayer<Dtype> {
   cudnnTensorDescriptor_t bias_desc_;
   cudnnFilterDescriptor_t filter_desc_;
   vector<cudnnConvolutionDescriptor_t> conv_descs_;
-  int bottom_offset_, top_offset_, bias_offset_;
 
   size_t *workspace_fwd_sizes_;
   size_t *workspace_bwd_data_sizes_;

@@ -185,6 +185,9 @@ void Solver<Dtype>::Step(int iters) {
   smoothed_loss_ = 0;
   iteration_timer_.Start();
 
+  // qz: time statistics
+  float tot_time = 0;
+  // qz: end
   while (iter_ < stop_iter) {
     // zero-init the params
     net_->ClearParamDiffs();
@@ -206,9 +209,29 @@ void Solver<Dtype>::Step(int iters) {
     net_->set_debug_info(display && param_.debug_info());
     // accumulate the loss and gradient
     Dtype loss = 0;
+    // qz: time statistics
+    float iter_time = 0;
+    // qz: end
     for (int i = 0; i < param_.iter_size(); ++i) {
-      loss += net_->ForwardBackward();
+      // loss += net_->ForwardBackward();
+      // qz: time statistics
+      net_->ForwardTo(0);
+      Dtype loss_ = 0;
+      clock_t t0 = clock();
+      loss_ = net_->ForwardFrom(1);
+      loss += loss_;
+      net_->BackwardTo(1);
+      clock_t t1 = clock();
+      iter_time += float(t1 - t0) / float(CLOCKS_PER_SEC);
+      // qz: end
     }
+    // qz: time statistics
+    iter_time /= param_.iter_size();
+    if (iter_ > start_iter) {
+      tot_time += iter_time;
+    }
+    printf("Iter %d time: %.6f\n", iter_, iter_time);
+    // qz: end
     loss /= param_.iter_size();
     // average the loss across iterations for smoothed reporting
     UpdateSmoothedLoss(loss, start_iter, average_loss);
@@ -234,9 +257,9 @@ void Solver<Dtype>::Step(int iters) {
             loss_msg_stream << " (* " << loss_weight
                             << " = " << loss_weight * result_vec[k] << " loss)";
           }
-          LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
-              << score_index++ << ": " << output_name << " = "
-              << result_vec[k] << loss_msg_stream.str();
+          // LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
+          //     << score_index++ << ": " << output_name << " = "
+          //     << result_vec[k] << loss_msg_stream.str();
         }
       }
     }
@@ -264,6 +287,9 @@ void Solver<Dtype>::Step(int iters) {
       break;
     }
   }
+  // qz: time statistics
+  printf("time: %.6f\n", tot_time / (float)(iters - 1));
+  // qz: end
 }
 
 template <typename Dtype>

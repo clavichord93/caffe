@@ -426,6 +426,287 @@ int time() {
 }
 RegisterBrewFunction(time);
 
+#include "caffe/proto/caffe.pb.h"
+#include "caffe/layers/depthwise_layer.hpp"
+#include "caffe/layers/cudnn_depthwise_layer.hpp"
+
+using caffe::LayerParameter;
+using caffe::ConvolutionParameter;
+using caffe::DepthwiseLayer;
+using caffe::CuDNNDepthwiseLayer;
+using caffe::caffe_set;
+
+int test_layer() {
+  Caffe::set_mode(Caffe::GPU);
+  // Data declaration.
+  vector<bool> propagate_down(1, true);
+  vector<Blob<float>*> bottom_vec_1;
+  vector<Blob<float>*> bottom_vec_2;
+  vector<Blob<float>*> top_vec_1;
+  vector<Blob<float>*> top_vec_2;
+  vector<shared_ptr<Blob<float> > > bottom_vec(2);
+  vector<shared_ptr<Blob<float> > > top_vec(2);
+  for (int i = 0; i < 2; i++) {
+    bottom_vec[i].reset(new Blob<float>(2, 3, 5, 5));
+    top_vec[i].reset(new Blob<float>());
+  }
+  bottom_vec_1.push_back(bottom_vec[0].get());
+  bottom_vec_2.push_back(bottom_vec[1].get());
+  top_vec_1.push_back(top_vec[0].get());
+  top_vec_2.push_back(top_vec[1].get());
+
+  // LayerParameter and ConvolutionParameter.
+  LayerParameter layer_param;
+  ConvolutionParameter* conv_param = layer_param.mutable_convolution_param();
+  conv_param->add_kernel_size(3);
+  conv_param->add_stride(1);
+  conv_param->add_pad(1);
+  conv_param->set_multiplier(1);
+  conv_param->set_bias_term(false);
+  conv_param->mutable_weight_filler()->set_type("constant");
+  conv_param->mutable_weight_filler()->set_value(1.);
+
+  // Layer declaration.
+  shared_ptr<DepthwiseLayer<float> > caffe(
+      new DepthwiseLayer<float>(layer_param));
+  shared_ptr<CuDNNDepthwiseLayer<float> > cudnn(
+      new CuDNNDepthwiseLayer<float>(layer_param));
+
+  // Test SetUp.
+  {
+  printf("----------------------------------------\n");
+  printf("|              Test SetUp              |\n");
+  printf("----------------------------------------\n");
+  caffe->SetUp(bottom_vec_1, top_vec_1);
+  printf("caffe: [%d, %d, %d, %d]\n", top_vec_1[0]->num(), 
+      top_vec_1[0]->channels(), top_vec_1[0]->height(), top_vec_1[0]->width());
+  cudnn->SetUp(bottom_vec_2, top_vec_2);
+  printf("cudnn: [%d, %d, %d, %d]\n", top_vec_2[0]->num(), 
+      top_vec_2[0]->channels(), top_vec_2[0]->height(), top_vec_2[0]->width());
+  printf("\n");
+  Blob<float>* caffe_weight = caffe->blobs()[0].get();
+  int caffe_dim = caffe_weight->count(1);
+  const float* caffe_data = caffe_weight->cpu_data();
+  printf("caffe_weight:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < caffe_dim; ++j) {
+      int index = i * caffe_dim + j;
+      printf("%.0f ", caffe_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  Blob<float>* cudnn_weight = cudnn->blobs()[0].get();
+  int cudnn_dim = cudnn_weight->count(1);
+  const float* cudnn_data = cudnn_weight->cpu_data();
+  printf("cudnn_weight:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < cudnn_dim; ++j) {
+      int index = i * cudnn_dim + j;
+      printf("%.0f ", cudnn_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  }
+
+  // Data initialization.
+  for (int i = 0; i < bottom_vec.size(); ++i) {
+    int bottom_dim = bottom_vec[i]->count();
+    float *bottom_data = bottom_vec[i]->mutable_cpu_data();
+    for (int j = 0; j < bottom_dim; ++j) {
+      bottom_data[j] = (float)1. - (float)2. * ((float)j / (float)bottom_dim);
+    }
+    float *bottom_diff = bottom_vec[i]->mutable_cpu_diff();
+    caffe_set(bottom_dim, (float)0., bottom_diff);
+  }
+  for (int i = 0; i < top_vec.size(); ++i) {
+    int top_dim = top_vec[i]->count();
+    float *top_data = top_vec[i]->mutable_cpu_data();
+    caffe_set(top_dim, (float)0., top_data);
+    float *top_diff = top_vec[i]->mutable_cpu_diff();
+    for (int j = 0; j < top_dim; ++j) {
+      top_diff[j] = (float)2. * ((float)j / (float)top_dim) - (float)1.;
+    }
+  }
+
+  // Test Forward.
+  {
+  printf("----------------------------------------\n");
+  printf("|             Test Forward             |\n");
+  printf("----------------------------------------\n");
+  caffe->Forward(bottom_vec_1, top_vec_1);
+  cudnn->Forward(bottom_vec_2, top_vec_2);
+  for (int i = 0; i < bottom_vec.size(); ++i) {
+    int num = bottom_vec[i]->shape(0);
+    int channels = bottom_vec[i]->shape(1);
+    int height = bottom_vec[i]->shape(2);
+    int width = bottom_vec[i]->shape(3);
+    const float *bottom_data = bottom_vec[i]->cpu_data();
+    printf("bottom_data[%d]:\n", i);
+    for (int j = 0; j < num; ++j) {
+      for (int k = 0; k < channels; ++k) {
+        for (int x = 0; x < height; ++x) {
+          for (int y = 0; y < width; ++y) {
+            int index = ((j * channels + k) * height + x) * width + y;
+            printf("%.2f ", bottom_data[index]);
+          }
+          printf("\n");
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+  for (int i = 0; i < top_vec.size(); ++i) {
+    int num = top_vec[i]->shape(0);
+    int channels = top_vec[i]->shape(1);
+    int height = top_vec[i]->shape(2);
+    int width = top_vec[i]->shape(3);
+    const float *top_data = top_vec[i]->cpu_data();
+    printf("top_data[%d]:\n", i);
+    for (int j = 0; j < num; ++j) {
+      for (int k = 0; k < channels; ++k) {
+        for (int x = 0; x < height; ++x) {
+          for (int y = 0; y < width; ++y) {
+            int index = ((j * channels + k) * height + x) * width + y;
+            printf("%.2f ", top_data[index]);
+          }
+          printf("\n");
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+  printf("\n");
+  }
+  
+  // Test Backward.
+  {
+  printf("----------------------------------------\n");
+  printf("|            Test Backward             |\n");
+  printf("----------------------------------------\n");
+  caffe->Backward(top_vec_1, propagate_down, bottom_vec_1);
+  cudnn->Backward(top_vec_2, propagate_down, bottom_vec_2);
+  for (int i = 0; i < top_vec.size(); ++i) {
+    int num = top_vec[i]->shape(0);
+    int channels = top_vec[i]->shape(1);
+    int height = top_vec[i]->shape(2);
+    int width = top_vec[i]->shape(3);
+    const float *top_diff = top_vec[i]->cpu_diff();
+    printf("top_diff[%d]:\n", i);
+    for (int j = 0; j < num; ++j) {
+      for (int k = 0; k < channels; ++k) {
+        for (int x = 0; x < height; ++x) {
+          for (int y = 0; y < width; ++y) {
+            int index = ((j * channels + k) * height + x) * width + y;
+            printf("%.2f ", top_diff[index]);
+          }
+          printf("\n");
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+  for (int i = 0; i < bottom_vec.size(); ++i) {
+    int num = bottom_vec[i]->shape(0);
+    int channels = bottom_vec[i]->shape(1);
+    int height = bottom_vec[i]->shape(2);
+    int width = bottom_vec[i]->shape(3);
+    const float *bottom_diff = bottom_vec[i]->cpu_diff();
+    printf("bottom_diff[%d]:\n", i);
+    for (int j = 0; j < num; ++j) {
+      for (int k = 0; k < channels; ++k) {
+        for (int x = 0; x < height; ++x) {
+          for (int y = 0; y < width; ++y) {
+            int index = ((j * channels + k) * height + x) * width + y;
+            printf("%.2f ", bottom_diff[index]);
+          }
+          printf("\n");
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+  printf("\n");
+  Blob<float>* caffe_weight = caffe->blobs()[0].get();
+  int caffe_dim = caffe_weight->count(1);
+  const float* caffe_diff = caffe_weight->cpu_diff();
+  printf("caffe_weight_diff:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < caffe_dim; ++j) {
+      int index = i * caffe_dim + j;
+      printf("%.2f ", caffe_diff[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  Blob<float>* cudnn_weight = cudnn->blobs()[0].get();
+  int cudnn_dim = cudnn_weight->count(1);
+  const float* cudnn_diff = cudnn_weight->cpu_diff();
+  printf("cudnn_weight_diff:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < cudnn_dim; ++j) {
+      int index = i * cudnn_dim + j;
+      printf("%.2f ", cudnn_diff[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  }
+
+  // Test Update.
+  {
+  caffe->blobs()[0]->Update();
+  cudnn->blobs()[0]->Update();
+  Blob<float>* caffe_weight = caffe->blobs()[0].get();
+  int caffe_dim = caffe_weight->count(1);
+  const float* caffe_data = caffe_weight->cpu_data();
+  printf("caffe_weight_data:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < caffe_dim; ++j) {
+      int index = i * caffe_dim + j;
+      printf("%.2f ", caffe_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  Blob<float>* cudnn_weight = cudnn->blobs()[0].get();
+  int cudnn_dim = cudnn_weight->count(1);
+  const float* cudnn_data = cudnn_weight->cpu_data();
+  printf("cudnn_weight_data:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < cudnn_dim; ++j) {
+      int index = i * cudnn_dim + j;
+      printf("%.2f ", cudnn_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  cudnn->CuDNNToCaffe();
+  const float* cudnn_caffe_data = cudnn->caffe_weight().cpu_data();
+  printf("cudnn_caffe_weight_data:\n");
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < caffe_dim; ++j) {
+      int index = i * caffe_dim + j;
+      printf("%.2f ", cudnn_caffe_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  }
+
+  return 0;
+}
+RegisterBrewFunction(test_layer);
+
 int main(int argc, char** argv) {
   // Print output to stderr (while still logging).
   FLAGS_alsologtostderr = 1;
