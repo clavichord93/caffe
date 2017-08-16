@@ -257,9 +257,9 @@ void Solver<Dtype>::Step(int iters) {
             loss_msg_stream << " (* " << loss_weight
                             << " = " << loss_weight * result_vec[k] << " loss)";
           }
-          // LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
-          //     << score_index++ << ": " << output_name << " = "
-          //     << result_vec[k] << loss_msg_stream.str();
+          LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
+              << score_index++ << ": " << output_name << " = "
+              << result_vec[k] << loss_msg_stream.str();
         }
       }
     }
