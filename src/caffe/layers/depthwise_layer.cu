@@ -12,8 +12,13 @@ void DepthwiseLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const Dtype* bottom_data = bottom[i]->gpu_data();
     Dtype* top_data = top[i]->mutable_gpu_data();
     for (int n = 0; n < this->num_; ++n) {
-      this->forward_gpu_gemm(bottom_data + n * this->bottom_dim_, weight,
-          top_data + n * this->top_dim_);
+      if (this->num_spatial_axes_ == 2) {
+        this->forward_gpu_cuda(bottom_data + n * this->bottom_dim_, weight,
+            top_data + n * this->top_dim_);
+      } else {
+        this->forward_gpu_gemm(bottom_data + n * this->bottom_dim_, weight,
+            top_data + n * this->top_dim_);
+      }
       if (this->bias_term_) {
         const Dtype* bias = this->blobs_[1]->gpu_data();
         this->forward_gpu_bias(top_data + n * this->top_dim_, bias);
@@ -47,8 +52,13 @@ void DepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
-          this->backward_gpu_gemm(top_diff + n * this->top_dim_, weight,
-              bottom_diff + n * this->bottom_dim_);
+          if (this->num_spatial_axes_ == 2) {
+            this->backward_gpu_cuda(top_diff + n * this->top_dim_, weight,
+                bottom_diff + n * this->bottom_dim_);
+          } else {
+            this->backward_gpu_gemm(top_diff + n * this->top_dim_, weight,
+                bottom_diff + n * this->bottom_dim_);
+          }
         }
       }
     }

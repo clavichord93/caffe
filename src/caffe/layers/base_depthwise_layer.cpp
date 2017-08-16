@@ -316,6 +316,26 @@ void BaseDepthwiseLayer<Dtype>::backward_gpu_bias(Dtype* bias,
       input, bias_multiplier_.gpu_data(), 1., bias);
 }
 
+template <typename Dtype>
+void BaseDepthwiseLayer<Dtype>::forward_gpu_cuda(const Dtype* data_in,
+    const Dtype* weight, Dtype* data_out) {
+  depthwise_forward_gpu_cuda(data_in, weight, data_out, channels_,
+      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], 
+      multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1], 
+      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0], 
+      stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+}
+
+template <typename Dtype>
+void BaseDepthwiseLayer<Dtype>::backward_gpu_cuda(const Dtype* data_out,
+    const Dtype* weight, Dtype* data_in) {
+  depthwise_backward_gpu_cuda(data_out, weight, data_in, channels_,
+      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], 
+      multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0], 
+      stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+}
+
 #endif  // !CPU_ONLY
 
 INSTANTIATE_CLASS(BaseDepthwiseLayer);
