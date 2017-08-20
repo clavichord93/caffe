@@ -18,6 +18,17 @@ template <typename Dtype>
 void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   DepthwiseLayer<Dtype>::LayerSetUp(bottom, top);
+
+  // Initialize group_ and weight_offset_.
+  group_ = this->layer_param_.convolution_param().group();
+  CHECK_EQ(0, this->channels_ % group_)
+      << "CuDNNConvolution input channels must be divisible by groups.";
+  const int* kernel_shape_data = this->kernel_shape_.cpu_data();
+  const int kernel_h = kernel_shape_data[0];
+  const int kernel_w = kernel_shape_data[1];
+  weight_offset_ = (this->num_output_ / group_) * (this->channels_ / group_) * 
+      kernel_h * kernel_w;
+
   // Initialize CUDA streams and cuDNN.
   stream_ = new cudaStream_t[CUDNN_STREAMS_DEPTHWISE];
   handle_ = new cudnnHandle_t[CUDNN_STREAMS_DEPTHWISE];
@@ -56,11 +67,8 @@ void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
   }
 
   // Create filter descriptor.
-  const int* kernel_shape_data = this->kernel_shape_.cpu_data();
-  const int kernel_h = kernel_shape_data[0];
-  const int kernel_w = kernel_shape_data[1];
   cudnn::createFilterDesc<Dtype>(&filter_desc_,
-      this->num_output_, this->channels_, kernel_h, kernel_w);
+      this->num_output_ / group_, this->channels_ / group_, kernel_h, kernel_w);
 
   // Create tensor descriptor(s) for data and corresponding convolution(s).
   for (int i = 0; i < bottom.size(); i++) {
@@ -83,13 +91,13 @@ void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
   // Modify parameters in DepthwiseLayer to CuDNNDepthwiseLayer
   vector<int> weight_shape(4);
   weight_shape[0] = this->num_output_;
-  weight_shape[1] = this->channels_;
+  weight_shape[1] = this->channels_ / group_;
   weight_shape[2] = kernel_h;
   weight_shape[3] = kernel_w;
 
   caffe_weight_.CopyFrom(*this->blobs_[0], false, true);
   caffe_weight_.CopyFrom(*this->blobs_[0], true, false);
-  this->blobs_[0].reset(new Blob<Dtype>(weight_shape));
+  this->blobs_[0]->Reshape(weight_shape);
   mask_.Reshape(weight_shape);
 
   CaffeToCuDNN();
@@ -105,6 +113,8 @@ void CuDNNDepthwiseLayer<Dtype>::Reshape(
       << "CuDNNConvolution input must have 2 spatial axes "
       << "(e.g., height and width). "
       << "Use 'engine: CAFFE' for general ND convolution.";
+  bottom_offset_ = this->bottom_dim_ / this->group_;
+  top_offset_ = this->top_dim_ / this->group_;
   const int height = bottom[0]->shape(this->channel_axis_ + 1);
   const int width = bottom[0]->shape(this->channel_axis_ + 2);
   const int height_out = top[0]->shape(this->channel_axis_ + 1);
@@ -122,9 +132,13 @@ void CuDNNDepthwiseLayer<Dtype>::Reshape(
 
   for (int i = 0; i < bottom.size(); i++) {
     cudnn::setTensor4dDesc<Dtype>(&bottom_descs_[i],
-        this->num_, this->channels_, height, width);
+        this->num_, this->channels_ / group_ , height, width,
+        this->channels_ * height * width,
+        height * width, width, 1);
     cudnn::setTensor4dDesc<Dtype>(&top_descs_[i],
-        this->num_, this->num_output_, height_out, width_out);
+        this->num_, this->num_output_ / group_, height_out, width_out,
+        this->num_output_ * this->out_spatial_dim_,
+        this->out_spatial_dim_, width_out, 1);
     cudnn::setConvolutionDesc<Dtype>(&conv_descs_[i], bottom_descs_[i],
         filter_desc_, pad_h, pad_w, stride_h, stride_w);
 
@@ -279,22 +293,21 @@ void CuDNNDepthwiseLayer<Dtype>::CaffeToCuDNN() {
     Dtype* cudnn_data = this->blobs_[0]->mutable_cpu_data();
     Dtype* cudnn_diff = this->blobs_[0]->mutable_cpu_diff();
     Dtype* mask_data = mask_.mutable_cpu_data();
+    int channels_per_group = this->channels_ / group_;
 
-    int N = this->num_output_ * this->channels_ * this->kernel_dim_;
+    int N = this->num_output_ * channels_per_group * this->kernel_dim_;
     caffe_set(N, (Dtype)0., cudnn_data);
     caffe_set(N, (Dtype)0., cudnn_diff);
     caffe_set(N, (Dtype)0., mask_data);
 
-    for (int i_ = 0; i_ < this->multiplier_; ++i_) {
-      for (int j = 0; j < this->channels_; ++j) {
-        for (int k = 0; k < this->kernel_dim_; ++k) {
-          int i = j * this->multiplier_ + i_;
-          int idx_cudnn = (i * this->channels_ + j) * this->kernel_dim_ + k;
-          int idx_caffe = i * this->kernel_dim_ + k;
-          cudnn_data[idx_cudnn] = caffe_data[idx_caffe];
-          cudnn_diff[idx_cudnn] = caffe_diff[idx_caffe];
-          mask_data[idx_cudnn] = 1.;
-        }
+    for (int i = 0; i < this->num_output_; ++i) {
+      for (int k = 0; k < this->kernel_dim_; ++k) {
+        int j = i / this->multiplier_ % channels_per_group;
+        int idx_cudnn = (i * channels_per_group + j) * this->kernel_dim_ + k;
+        int idx_caffe = i * this->kernel_dim_ + k;
+        cudnn_data[idx_cudnn] = caffe_data[idx_caffe];
+        cudnn_diff[idx_cudnn] = caffe_diff[idx_caffe];
+        mask_data[idx_cudnn] = 1.;
       }
     }
   }
@@ -307,15 +320,14 @@ void CuDNNDepthwiseLayer<Dtype>::CuDNNToCaffe() {
     const Dtype* cudnn_diff = this->blobs_[0]->cpu_diff();
     Dtype* caffe_data = caffe_weight_.mutable_cpu_data();
     Dtype* caffe_diff = caffe_weight_.mutable_cpu_diff();
-    for (int i_ = 0; i_ < this->multiplier_; ++i_) {
-      for (int j = 0; j < this->channels_; ++j) {
-        for (int k = 0; k < this->kernel_dim_; ++k) {
-          int i = j * this->multiplier_ + i_;
-          int idx_cudnn = (i * this->channels_ + j) * this->kernel_dim_ + k;
-          int idx_caffe = i * this->kernel_dim_ + k;
-          caffe_data[idx_caffe] = cudnn_data[idx_cudnn];
-          caffe_diff[idx_caffe] = cudnn_diff[idx_cudnn];
-        }
+    int channels_per_group = this->channels_ / group_;
+    for (int i = 0; i < this->num_output_; ++i) {
+      for (int k = 0; k < this->kernel_dim_; ++k) {
+        int j = i / this->multiplier_ % channels_per_group;
+        int idx_cudnn = (i * channels_per_group + j) * this->kernel_dim_ + k;
+        int idx_caffe = i * this->kernel_dim_ + k;
+        caffe_data[idx_caffe] = cudnn_data[idx_cudnn];
+        caffe_diff[idx_caffe] = cudnn_diff[idx_cudnn];
       }
     }
   }

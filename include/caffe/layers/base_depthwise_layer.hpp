@@ -95,8 +95,6 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
   int channels_;
   // The size of a output channel (out_h x out_w).
   int out_spatial_dim_;
-  // The offset of every group (channel) in weights.
-  int weight_offset_;
   // The number of channels of the top blob.
   int num_output_;
   // The depthwise multiplier.
@@ -181,10 +179,6 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
   int conv_in_channels_;
   // The output size of a filter kernel (out_h x out_w).
   int conv_out_spatial_dim_;
-  // The offset of every group (channel) in workspace.
-  int col_offset_;
-  // The offset of every group (channel) in output.
-  int output_offset_;
 
   Blob<Dtype> col_buffer_;
   Blob<Dtype> bias_multiplier_;

@@ -68,6 +68,8 @@ class CuDNNDepthwiseLayer : public DepthwiseLayer<Dtype> {
 
   Blob<Dtype> mask_;
   Blob<Dtype> caffe_weight_;
+  int group_;
+  int weight_offset_, bottom_offset_, top_offset_;
 };
 #endif
 

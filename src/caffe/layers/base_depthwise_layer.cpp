@@ -160,7 +160,6 @@ void BaseDepthwiseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     }
   }
   kernel_dim_ = this->blobs_[0]->count(1);
-  weight_offset_ = multiplier_ * kernel_dim_;
   // Propagate gradients to the parameters (as directed by backward pass).
   this->param_propagate_down_.resize(this->blobs_.size(), true);
 }
@@ -192,8 +191,6 @@ void BaseDepthwiseLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     top[top_id]->Reshape(top_shape);
   }
   conv_out_spatial_dim_ = top[0]->count(first_spatial_axis);
-  col_offset_ = kernel_dim_ * conv_out_spatial_dim_;
-  output_offset_ = multiplier_ * conv_out_spatial_dim_;
   // Setup input dimensions (conv_input_shape_).
   vector<int> bottom_dim_blob_shape(1, num_spatial_axes_ + 1);
   conv_input_shape_.Reshape(bottom_dim_blob_shape);
