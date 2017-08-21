@@ -8,22 +8,26 @@ namespace caffe {
 template <typename Dtype>
 __global__ void depthwise_forward_gpu_cuda_kernel(const int n,
     const Dtype* data_in, const Dtype* weight, Dtype* data_out,
-    const int height, const int width, const int multiplier, const int kernel_h,
-    const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
-    const int stride_w, const int dilation_h, const int dilation_w,
-    const int height_out, const int width_out) {
+    const int channels, const int height, const int width, const int multiplier,
+    const int kernel_h, const int kernel_w, const int pad_h, const int pad_w,
+    const int stride_h, const int stride_w, const int dilation_h,
+    const int dilation_w, const int height_out, const int width_out) {
   CUDA_KERNEL_LOOP(index, n) {
+    const int w_out = index % width_out;
     const int h_index = index / width_out;
     const int h_out = h_index % height_out;
-    const int w_out = index % width_out;
-    const int c_in = h_index / height_out;
+    const int c_index = h_index / height_out;
+    const int c_in = c_index % channels;
     const int c_out = c_in * multiplier;
+    const int batch = c_index / channels;
     const int h_offset = h_out * stride_h - pad_h;
     const int w_offset = w_out * stride_w - pad_w;
     Dtype* data_out_ptr = data_out;
-    data_out_ptr += (c_out * height_out + h_out) * width_out + w_out;
+    data_out_ptr += ((batch * channels * multiplier + c_out) * height_out +
+        h_out) * width_out + w_out;
     const Dtype* data_in_ptr = data_in;
-    data_in_ptr += (c_in * height + h_offset) * width + w_offset;
+    data_in_ptr += ((batch * channels + c_in) * height + h_offset) * width +
+        w_offset;
     const Dtype* weight_ptr = weight;
     weight += c_out * kernel_h * kernel_w;
     for (int k = 0; k < multiplier; ++k) {
@@ -47,30 +51,30 @@ __global__ void depthwise_forward_gpu_cuda_kernel(const int n,
 
 template <typename Dtype>
 void depthwise_forward_gpu_cuda(const Dtype* data_in, const Dtype* weight,
-    Dtype* data_out, const int channels, const int height, const int width,
-    const int multiplier, const int kernel_h, const int kernel_w,
-    const int pad_h, const int pad_w, const int stride_h, const int stride_w,
-    const int dilation_h, const int dilation_w) {
+    Dtype* data_out, const int batch, const int channels, const int height,
+    const int width, const int multiplier, const int kernel_h,
+    const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
+    const int stride_w, const int dilation_h, const int dilation_w) {
   int height_out = (height + 2 * pad_h - (dilation_h * (kernel_h - 1) + 1)) /
       stride_h + 1;
   int width_out = (width + 2 * pad_w - (dilation_w * (kernel_w - 1) + 1)) /
       stride_w + 1;
-  int num_kernels = channels * height_out * width_out;
-  depthwise_forward_gpu_cuda_kernel<Dtype><<<CAFFE_GET_BLOCKS(num_kernels), 
-                                              CAFFE_CUDA_NUM_THREADS>>>(
-      num_kernels, data_in, weight, data_out, height, width, multiplier,
-      kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w, dilation_h,
-      dilation_w, height_out, width_out);
+  int num_kernels = batch * channels * height_out * width_out;
+  depthwise_forward_gpu_cuda_kernel<Dtype><<<CAFFE_GET_BLOCKS(num_kernels),
+                                             CAFFE_CUDA_NUM_THREADS>>>(
+      num_kernels, data_in, weight, data_out, channels, height, width,
+      multiplier, kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w,
+      dilation_h, dilation_w, height_out, width_out);
   CUDA_POST_KERNEL_CHECK;
 }
 
 template void depthwise_forward_gpu_cuda<float>(const float* data_in,
-    const float* weight, float* data_out, const int channels, const int height,
-    const int width, const int multiplier, const int kernel_h,
+    const float* weight, float* data_out, const int batch, const int channels,
+    const int height, const int width, const int multiplier, const int kernel_h,
     const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
     const int stride_w, const int dilation_h, const int dilation_w);
 template void depthwise_forward_gpu_cuda<double>(const double* data_in,
-    const double* weight, double* data_out, const int channels,
+    const double* weight, double* data_out, const int batch, const int channels,
     const int height, const int width, const int multiplier, const int kernel_h,
     const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
     const int stride_w, const int dilation_h, const int dilation_w);
@@ -78,16 +82,17 @@ template void depthwise_forward_gpu_cuda<double>(const double* data_in,
 template <typename Dtype>
 __global__ void depthwise_backward_gpu_cuda_kernel(const int n,
     const Dtype* data_out, const Dtype* weight, Dtype* data_in,
-    const int height, const int width, const int multiplier, const int kernel_h,
-    const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
-    const int stride_w, const int dilation_h, const int dilation_w,
-    const int height_out, const int width_out) {
+    const int channels, const int height, const int width, const int multiplier,
+    const int kernel_h, const int kernel_w, const int pad_h, const int pad_w,
+    const int stride_h, const int stride_w, const int dilation_h,
+    const int dilation_w, const int height_out, const int width_out) {
   CUDA_KERNEL_LOOP(index, n) {
     Dtype val = 0;
     const int w_in = index % width + pad_w;
     const int h_in = (index / width) % height + pad_h;
-    const int c_in = index / (width * height);
+    const int c_in = index / (width * height) % channels;
     const int c_out = c_in * multiplier;
+    const int batch = index / (channels * width * height);
     int kernel_extent_w = (kernel_w - 1) * dilation_w + 1;
     int kernel_extent_h = (kernel_h - 1) * dilation_h + 1;
     // compute the start and end of the output
@@ -99,7 +104,8 @@ __global__ void depthwise_backward_gpu_cuda_kernel(const int n,
     const int h_out_end = min(h_in / stride_h + 1, height_out);
     // TODO: use LCM of stride and dilation to avoid unnecessary loops
     const Dtype* data_out_ptr = data_out;
-    data_out_ptr += c_out * height_out * width_out;
+    data_out_ptr += (batch * channels * multiplier + c_out) * height_out * 
+        width_out;
     const Dtype* weight_ptr = weight;
     weight_ptr += c_out * kernel_h * kernel_w;
     for (int k = 0; k < multiplier; ++k) {
@@ -124,31 +130,31 @@ __global__ void depthwise_backward_gpu_cuda_kernel(const int n,
 
 template <typename Dtype>
 void depthwise_backward_gpu_cuda(const Dtype* data_out, const Dtype* weight,
-    Dtype* data_in, const int channels, const int height, const int width,
-    const int multiplier, const int kernel_h, const int kernel_w,
-    const int pad_h, const int pad_w, const int stride_h, const int stride_w,
-    const int dilation_h, const int dilation_w) {
+    Dtype* data_in, const int batch, const int channels, const int height,
+    const int width, const int multiplier, const int kernel_h,
+    const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
+    const int stride_w, const int dilation_h, const int dilation_w) {
   int height_out = (height + 2 * pad_h - (dilation_h * (kernel_h - 1) + 1)) /
       stride_h + 1;
   int width_out = (width + 2 * pad_w - (dilation_w * (kernel_w - 1) + 1)) /
       stride_w + 1;
-  int num_kernels = channels * height * width;
+  int num_kernels = batch * channels * height * width;
   depthwise_backward_gpu_cuda_kernel<Dtype>
       <<<CAFFE_GET_BLOCKS(num_kernels), CAFFE_CUDA_NUM_THREADS>>>(
-      num_kernels, data_out, weight, data_in, height, width, multiplier,
-      kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w, dilation_h,
-      dilation_w, height_out, width_out);
+      num_kernels, data_out, weight, data_in, channels, height, width,
+      multiplier, kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w,
+      dilation_h, dilation_w, height_out, width_out);
   CUDA_POST_KERNEL_CHECK;
 }
 
 template void depthwise_backward_gpu_cuda<float>(const float* data_out,
-    const float* weight, float* data_in, const int channels, const int height,
-    const int width, const int multiplier, const int kernel_h,
+    const float* weight, float* data_in, const int batch, const int channels,
+    const int height, const int width, const int multiplier, const int kernel_h,
     const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
     const int stride_w, const int dilation_h, const int dilation_w);
 template void depthwise_backward_gpu_cuda<double>(const double* data_out,
-    const double* weight, double* data_in, const int channels, const int height,
-    const int width, const int multiplier, const int kernel_h,
+    const double* weight, double* data_in, const int batch, const int channels,
+    const int height, const int width, const int multiplier, const int kernel_h,
     const int kernel_w, const int pad_h, const int pad_w, const int stride_h,
     const int stride_w, const int dilation_h, const int dilation_w);
 
