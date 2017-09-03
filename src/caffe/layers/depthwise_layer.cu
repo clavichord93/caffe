@@ -48,10 +48,7 @@ void DepthwiseLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       if (this->num_spatial_axes_ == 2) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
-          for (int n = 0; n < this->num_; ++n) {
-            this->weight_gpu_gemm(bottom_data + n * this->bottom_dim_,
-                top_diff + n * this->top_dim_, weight_diff);
-          }
+          this->weight_gpu_cuda(top_diff, bottom_data, weight_diff);
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {

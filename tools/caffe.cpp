@@ -436,6 +436,12 @@ using caffe::DepthwiseLayer;
 using caffe::CuDNNDepthwiseLayer;
 using caffe::caffe_set;
 
+float get_rand() {
+    static int seed = 123;
+    seed = seed * 10301 % 79997;
+    return 2. * (float)seed / 79996. - 1.;
+}
+
 int test_layer() {
   Caffe::set_mode(Caffe::GPU);
   // Data declaration.
@@ -447,7 +453,7 @@ int test_layer() {
   vector<shared_ptr<Blob<float> > > bottom_vec(2);
   vector<shared_ptr<Blob<float> > > top_vec(2);
   for (int i = 0; i < 2; i++) {
-    bottom_vec[i].reset(new Blob<float>(2, 3, 5, 5));
+    bottom_vec[i].reset(new Blob<float>(2, 4, 5, 5));
     top_vec[i].reset(new Blob<float>());
   }
   bottom_vec_1.push_back(bottom_vec[0].get());
@@ -462,6 +468,7 @@ int test_layer() {
   conv_param->add_stride(1);
   conv_param->add_pad(1);
   conv_param->set_multiplier(1);
+  conv_param->set_group(2);
   conv_param->set_bias_term(false);
   conv_param->mutable_weight_filler()->set_type("constant");
   conv_param->mutable_weight_filler()->set_value(1.);
@@ -488,7 +495,7 @@ int test_layer() {
   int caffe_dim = caffe_weight->count(1);
   const float* caffe_data = caffe_weight->cpu_data();
   printf("caffe_weight:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < caffe_dim; ++j) {
       int index = i * caffe_dim + j;
       printf("%.0f ", caffe_data[index]);
@@ -498,12 +505,25 @@ int test_layer() {
   printf("\n");
   Blob<float>* cudnn_weight = cudnn->blobs()[0].get();
   int cudnn_dim = cudnn_weight->count(1);
+  printf("cudnn_dim: %d\n", cudnn_dim);
   const float* cudnn_data = cudnn_weight->cpu_data();
   printf("cudnn_weight:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < cudnn_dim; ++j) {
       int index = i * cudnn_dim + j;
       printf("%.0f ", cudnn_data[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  cudnn->CuDNNToCaffe();
+  int cudnn_caffe_dim = cudnn->caffe_weight().count(1);
+  const float* cudnn_caffe_data = cudnn->caffe_weight().cpu_data();
+  printf("cudnn_caffe_weight_data:\n");
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < cudnn_caffe_dim; ++j) {
+      int index = i * cudnn_caffe_dim + j;
+      printf("%.0f ", cudnn_caffe_data[index]);
     }
     printf("\n");
   }
@@ -640,7 +660,7 @@ int test_layer() {
   int caffe_dim = caffe_weight->count(1);
   const float* caffe_diff = caffe_weight->cpu_diff();
   printf("caffe_weight_diff:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < caffe_dim; ++j) {
       int index = i * caffe_dim + j;
       printf("%.2f ", caffe_diff[index]);
@@ -652,10 +672,22 @@ int test_layer() {
   int cudnn_dim = cudnn_weight->count(1);
   const float* cudnn_diff = cudnn_weight->cpu_diff();
   printf("cudnn_weight_diff:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < cudnn_dim; ++j) {
       int index = i * cudnn_dim + j;
       printf("%.2f ", cudnn_diff[index]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+  cudnn->CuDNNToCaffe();
+  int cudnn_caffe_dim = cudnn->caffe_weight().count(1);
+  const float* cudnn_caffe_diff = cudnn->caffe_weight().cpu_diff();
+  printf("cudnn_caffe_weight_diff:\n");
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < cudnn_caffe_dim; ++j) {
+      int index = i * cudnn_caffe_dim + j;
+      printf("%.2f ", cudnn_caffe_diff[index]);
     }
     printf("\n");
   }
@@ -670,7 +702,7 @@ int test_layer() {
   int caffe_dim = caffe_weight->count(1);
   const float* caffe_data = caffe_weight->cpu_data();
   printf("caffe_weight_data:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < caffe_dim; ++j) {
       int index = i * caffe_dim + j;
       printf("%.2f ", caffe_data[index]);
@@ -682,7 +714,7 @@ int test_layer() {
   int cudnn_dim = cudnn_weight->count(1);
   const float* cudnn_data = cudnn_weight->cpu_data();
   printf("cudnn_weight_data:\n");
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < cudnn_dim; ++j) {
       int index = i * cudnn_dim + j;
       printf("%.2f ", cudnn_data[index]);
@@ -691,11 +723,12 @@ int test_layer() {
   }
   printf("\n");
   cudnn->CuDNNToCaffe();
+  int cudnn_caffe_dim = cudnn->caffe_weight().count(1);
   const float* cudnn_caffe_data = cudnn->caffe_weight().cpu_data();
   printf("cudnn_caffe_weight_data:\n");
-  for (int i = 0; i < 3; ++i) {
-    for (int j = 0; j < caffe_dim; ++j) {
-      int index = i * caffe_dim + j;
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < cudnn_caffe_dim; ++j) {
+      int index = i * cudnn_caffe_dim + j;
       printf("%.2f ", cudnn_caffe_data[index]);
     }
     printf("\n");

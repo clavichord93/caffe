@@ -532,6 +532,39 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
 }
 
 template <typename Dtype>
+Dtype Net<Dtype>::ForwardTimer(vector<float>& timer) {
+  Dtype loss = 0;
+  int num_layer = layers_.size();
+  for (int i = 1; i < num_layer; ++i) {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    for (int c = 0; c < before_forward_.size(); ++c) {
+      before_forward_[c]->run(i);
+    }
+    cudaEventRecord(start);
+    //cudaDeviceSynchronize();
+    //int t0 = clock();
+    Dtype layer_loss = layers_[i]->Forward(bottom_vecs_[i], top_vecs_[i]);
+    cudaEventRecord(stop);
+    //cudaDeviceSynchronize();
+    //int t1 = clock();
+    loss += layer_loss;
+    for (int c = 0; c < after_forward_.size(); ++c) {
+      after_forward_[c]->run(i);
+    }
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    timer[i] = milliseconds;
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    //timer[i] += (float)(t1 - t0) / (float)(CLOCKS_PER_SEC);
+  }
+  return loss;
+}
+
+template <typename Dtype>
 Dtype Net<Dtype>::ForwardFrom(int start) {
   return ForwardFromTo(start, layers_.size() - 1);
 }
@@ -581,6 +614,40 @@ void Net<Dtype>::BackwardFromTo(int start, int end) {
     }
   }
 }
+
+template <typename Dtype>
+void Net<Dtype>::BackwardTimer(vector<float>& timer) {
+  int num_layer = layers_.size();
+  for (int i = num_layer - 1; i >= 1; --i) {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    for (int c = 0; c < before_backward_.size(); ++c) {
+      before_backward_[c]->run(i);
+    }
+    cudaEventRecord(start);
+    //cudaDeviceSynchronize();
+    //int t0 = clock();
+    if (layer_need_backward_[i]) {
+      layers_[i]->Backward(
+          top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
+    }
+    cudaEventRecord(stop);
+    //cudaDeviceSynchronize();
+    //int t1 = clock();
+    for (int c = 0; c < after_backward_.size(); ++c) {
+      after_backward_[c]->run(i);
+    }
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    timer[i] = milliseconds;
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    //timer[i] += (float)(t1 - t0) / (float)(CLOCKS_PER_SEC);
+  }
+}
+
 
 template <typename Dtype>
 void Net<Dtype>::ForwardDebugInfo(const int layer_id) {

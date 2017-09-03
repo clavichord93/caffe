@@ -21,6 +21,9 @@ void CuDNNDepthwiseLayer<Dtype>::LayerSetUp(
 
   // Initialize group_ and weight_offset_.
   group_ = this->layer_param_.convolution_param().group();
+  //group_ = std::min(64, this->channels_);
+  //group_ = 32;
+  //group_ = std::max(this->channels_ / 32, 1);
   CHECK_EQ(0, this->channels_ % group_)
       << "CuDNNConvolution input channels must be divisible by groups.";
   const int* kernel_shape_data = this->kernel_shape_.cpu_data();

@@ -45,16 +45,18 @@ class BaseDepthwiseLayer : public Layer<Dtype> {
 #ifndef CPU_ONLY
   void forward_gpu_gemm(const Dtype* col_input, const Dtype* weights,
       Dtype* output);
-  void forward_gpu_cuda(const Dtype* col_input, const Dtype* weights,
-      Dtype* output);
   void forward_gpu_bias(Dtype* output, const Dtype* bias);
   void backward_gpu_gemm(const Dtype* input, const Dtype* weights,
-      Dtype* col_output);
-  void backward_gpu_cuda(const Dtype* input, const Dtype* weights,
       Dtype* col_output);
   void weight_gpu_gemm(const Dtype* col_input, const Dtype* output, Dtype*
       weights);
   void backward_gpu_bias(Dtype* bias, const Dtype* input);
+
+  void forward_gpu_cuda(const Dtype* input, const Dtype* weights,
+      Dtype* output);
+  void backward_gpu_cuda(const Dtype* input, const Dtype* weights,
+      Dtype* output);
+  void weight_gpu_cuda(const Dtype* input, const Dtype* output, Dtype* weights);
 #endif
 
   /// @brief The spatial dimensions of the input.

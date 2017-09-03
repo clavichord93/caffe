@@ -316,20 +316,69 @@ void BaseDepthwiseLayer<Dtype>::backward_gpu_bias(Dtype* bias,
 template <typename Dtype>
 void BaseDepthwiseLayer<Dtype>::forward_gpu_cuda(const Dtype* data_in,
     const Dtype* weight, Dtype* data_out) {
+  // Single-Sample depth-wise implementation
+  // const Dtype* data_in_ptr = data_in;
+  // Dtype* data_out_ptr = data_out;
+  // for (int i = 0; i < num_; ++i) {
+  //   depthwise_forward_gpu_cuda(data_in_ptr, weight, data_out_ptr, 1, channels_,
+  //       conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+  //       multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+  //       pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
+  //       stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+  //   data_in_ptr += bottom_dim_;
+  //   data_out_ptr += top_dim_;
+  // }
+  // Multi-Sample depth-wise implementation
   depthwise_forward_gpu_cuda(data_in, weight, data_out, num_, channels_,
-      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], 
-      multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1], 
-      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0], 
+      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+      multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
       stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
 }
 
 template <typename Dtype>
 void BaseDepthwiseLayer<Dtype>::backward_gpu_cuda(const Dtype* data_out,
     const Dtype* weight, Dtype* data_in) {
-  depthwise_backward_gpu_cuda(data_out, weight, data_in, num_, channels_,
-      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], 
+  // Single-Sample depth-wise implementation
+  // Dtype* data_in_ptr = data_in;
+  // const Dtype* data_out_ptr = data_out;
+  // for (int i = 0; i < num_; ++i) {
+  //   depthwise_backward_data_gpu_cuda(data_out_ptr, weight, data_in_ptr, 1, channels_,
+  //       conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+  //       multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+  //       pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
+  //       stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+  //   data_in_ptr += bottom_dim_;
+  //   data_out_ptr += top_dim_;
+  // }
+  // Multi-Sample depth-wise implementation
+  depthwise_backward_data_gpu_cuda(data_out, weight, data_in, num_, channels_,
+      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
       multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
-      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0], 
+      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
+      stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+}
+
+template <typename Dtype>
+void BaseDepthwiseLayer<Dtype>::weight_gpu_cuda(const Dtype* data_out,
+    const Dtype* data_in, Dtype* weight) {
+  // Single-Sample depth-wise implementation
+  // const Dtype* data_in_ptr = data_in;
+  // const Dtype* data_out_ptr = data_out;
+  // for (int i = 0; i < num_; ++i) {
+  //   depthwise_backward_filter_gpu_cuda(data_out_ptr, data_in_ptr, weight, 1, channels_,
+  //       conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+  //       multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+  //       pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
+  //       stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
+  //   data_in_ptr += bottom_dim_;
+  //   data_out_ptr += top_dim_;
+  // }
+  // Multi-Sample depth-wise implementation
+  depthwise_backward_filter_gpu_cuda(data_out, data_in, weight, num_, channels_,
+      conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+      multiplier_, kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+      pad_.cpu_data()[0], pad_.cpu_data()[1], stride_.cpu_data()[0],
       stride_.cpu_data()[1], dilation_.cpu_data()[0], dilation_.cpu_data()[1]);
 }
 

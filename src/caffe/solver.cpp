@@ -187,9 +187,9 @@ void Solver<Dtype>::Step(int iters) {
 
   // qz: time statistics
   float tot_time = 0;
-  float tot_forward_time[200] = {0};
-  float tot_backward_time[200] = {0};
   int limit = net_->layers().size();
+  vector<float> tot_forward_time(limit, 0);
+  vector<float> tot_backward_time(limit, 0);
   // qz: end
   while (iter_ < stop_iter) {
     // zero-init the params
@@ -214,36 +214,59 @@ void Solver<Dtype>::Step(int iters) {
     Dtype loss = 0;
     // qz: time statistics
     float iter_time = 0;
-    float iter_forward_time[100] = {0};
-    float iter_backward_time[100] = {0};
+    vector<float> iter_forward_time(limit, 0);
+    vector<float> iter_backward_time(limit, 0);
+    for (int i = 0; i < limit; ++i) {
+      iter_forward_time[i] = 0;
+      iter_backward_time[i] = 0;
+    }
     // qz: end
     for (int i = 0; i < param_.iter_size(); ++i) {
       // loss += net_->ForwardBackward();
       // qz: time statistics
       net_->ForwardTo(0);
-      cudaDeviceSynchronize();
-      Dtype loss_ = 0;
-      clock_t t0 = clock();
-      loss_ = net_->ForwardFrom(1);
-      loss += loss_;
-      net_->BackwardTo(1);
-      cudaDeviceSynchronize();
-      clock_t t1 = clock();
-      iter_time += float(t1 - t0) / float(CLOCKS_PER_SEC);
-      for (int j = 1; j < limit; ++j) {
-        clock_t t0 = clock();
-        net_->ForwardFromTo(j, j);
-        cudaDeviceSynchronize();
-        clock_t t1 = clock();
-        iter_forward_time[j] += float(t1 - t0) / float(CLOCKS_PER_SEC);
-      }
-      for (int j = limit - 1; j >= 1; --j) {
-        clock_t t0 = clock();
-        net_->BackwardFromTo(j, j);
-        cudaDeviceSynchronize();
-        clock_t t1 = clock();     
-        iter_backward_time[j] += float(t1 - t0) / float(CLOCKS_PER_SEC);
-      }
+      //cudaDeviceSynchronize();
+      //clock_t t0 = clock();
+      cudaEvent_t start, stop;
+      cudaEventCreate(&start);
+      cudaEventCreate(&stop);
+      cudaEventRecord(start);
+      loss += net_->ForwardTimer(iter_forward_time);
+      net_->BackwardTimer(iter_backward_time);
+      //loss += net_->ForwardFrom(1);
+      //net_->BackwardTo(1);
+      cudaEventRecord(stop);
+      cudaEventSynchronize(stop);
+      float milliseconds = 0;
+      cudaEventElapsedTime(&milliseconds, start, stop);
+      iter_time += milliseconds;
+      cudaEventDestroy(start);
+      cudaEventDestroy(stop);
+      //cudaDeviceSynchronize();
+      //clock_t t1 = clock();
+      //iter_time += float(t1 - t0) / float(CLOCKS_PER_SEC);
+      //cudaDeviceSynchronize();
+      //t0 = clock();
+      //net_->ForwardFromTo(1, 1);
+      //cudaDeviceSynchronize();
+      //t1 = clock();
+      //printf("%.6f\n", float(t1 - t0) / float(CLOCKS_PER_SEC));
+      //for (int j = 1; j < limit; ++j) {
+      //  cudaDeviceSynchronize();
+      //  clock_t t0 = clock();
+      //  net_->ForwardFromTo(j, j);
+      //  cudaDeviceSynchronize();
+      //  clock_t t1 = clock();
+      //  iter_forward_time[j] += float(t1 - t0) / float(CLOCKS_PER_SEC);
+      //}
+      //for (int j = limit - 1; j >= 1; --j) {
+      //  cudaDeviceSynchronize();
+      //  clock_t t0 = clock();
+      //  net_->BackwardFromTo(j, j);
+      //  cudaDeviceSynchronize();
+      //  clock_t t1 = clock();
+      //  iter_backward_time[j] += float(t1 - t0) / float(CLOCKS_PER_SEC);
+      //}
       // qz: end
     }
     // qz: time statistics
@@ -252,6 +275,12 @@ void Solver<Dtype>::Step(int iters) {
       iter_backward_time[i] /= param_.iter_size();
     }
     iter_time /= param_.iter_size();
+    float time_ = 0;
+    for (int i = 1; i < limit; i++) {
+      time_ += iter_forward_time[i];
+      time_ += iter_backward_time[i];
+    }
+    printf("%d %.6f %.6f\n", param_.iter_size(), iter_time, time_ * 1000);
     if (iter_ > start_iter) {
       tot_time += iter_time;
       for (int i = 1; i < limit; i++) {
@@ -319,11 +348,28 @@ void Solver<Dtype>::Step(int iters) {
   // qz: time statistics
   printf("time: %.6f\n", tot_time / (float)(iters - 1));
   for (int i = 1; i < limit; ++i) {
-    if (strcmp(net_->layers()[i]->type(), "Convolution") == 0 || 
+    if (strcmp(net_->layers()[i]->type(), "Convolution") == 0 ||
         strcmp(net_->layers()[i]->type(), "Depthwise") == 0) {
-      printf("%15s: %10.6f %10.6f\n", net_->layers()[i]->type(), 
-          tot_forward_time[i] / (float)(iters - 1), 
-          tot_backward_time[i] / (float)(iters - 1));
+      float forward = tot_forward_time[i];
+      float backward = tot_backward_time[i];;
+      for (int j = i; j < i + 4 && j < limit; ++j) {
+          if (strcmp(net_->layers()[j]->type(), "BatchNorm") == 0 ||
+              strcmp(net_->layers()[j]->type(), "Scale") == 0 ||
+              strcmp(net_->layers()[j]->type(), "ReLU") == 0) {
+            forward += tot_forward_time[j];
+            backward += tot_backward_time[j];
+          }
+      }
+      printf("%15s: %10.6f %10.6f %10.6f\n", net_->layers()[i]->type(),
+          forward / (float)(iters - 1),
+          backward / (float)(iters - 1),
+          (forward + backward) / (float)(iters - 1));
+    }
+    if (strcmp(net_->layers()[i]->type(), "SoftmaxWithLoss") == 0) {
+      printf("%15s: %10.6f %10.6f %10.6f\n", net_->layers()[i]->type(),
+          tot_forward_time[i] / (float)(iters - 1),
+          tot_backward_time[i] / (float)(iters - 1),
+          (tot_forward_time[i] + tot_backward_time[i]) / (float)(iters - 1));
     }
   }
   // qz: end
