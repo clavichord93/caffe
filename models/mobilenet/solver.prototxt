@@ -1,0 +1,16 @@
+net: "models/mobilenet/mobilenet-diagonalwise-refactorization.prototxt"
+#net: "models/mobilenet/mobilenet-specialized-kernel.prototxt"
+#net: "models/mobilenet/mobilenet-channel-by-channel.prototxt"
+#test_iter: 1000
+#test_interval: 1000
+base_lr: 0.01
+lr_policy: "step"
+gamma: 0.1
+stepsize: 100000
+display: 0
+max_iter: 1000
+momentum: 0.9
+weight_decay: 0.0005
+snapshot: 10000
+snapshot_prefix: "models/mobilenet/mobilenet_train"
+solver_mode: GPU
